@@ -1,6 +1,7 @@
 package com.bigdata.test.mr;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
@@ -99,6 +100,11 @@ public class WordCountMR {
         };
         WordCountMR wordCountMR = new WordCountMR();
         try {
+            Path outputPath = new Path(args[1]);
+            FileSystem fileSystem = FileSystem.get(new Configuration());
+            if(fileSystem.exists(outputPath)){
+                fileSystem.delete(outputPath, true);
+            }
             int status = wordCountMR.run(args);
             System.exit(status);
         } catch (Exception e) {
