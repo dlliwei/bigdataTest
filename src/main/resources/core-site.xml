@@ -22,6 +22,7 @@
         <value>hdfs://bigdata-pro11.liwei.com:9000</value>
     </property>
 
+    <!-- 本地运行时可能要去掉下面的配置 -->
     <property>
         <name>hadoop.tmp.dir</name>
         <value>/opt/modules/hadoop-2.7.0/data/tmp</value>
