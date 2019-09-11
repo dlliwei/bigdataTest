@@ -2,6 +2,7 @@ package com.bigdata.test.mr;
 
 import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
@@ -12,21 +13,18 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.Tool;
 
 import java.io.IOException;
 import java.util.List;
 
+/*
+* MapReduce模板：MapReduce升级版本
+*/
+public class WordCountCombinerMR extends Configured implements Tool{
 
-public class WordCountMR {
     /*
-        数据源(一行)：
-        hbase hbase hadoop
-    */
-
-    /* 1 map(一行)
-    *
-    * 系统自动将一行数据转换成<key, value>： <0, hbase hbase hadoop>  对应 <KEYIN, VALUEIN>
-    * 程序map后转成<key, value>： <hbase， 1>  <hbase， 1> <hadoop, 1> 对应 <KEYOUT, VALUEOUT>
+    * map
     */
     public static class WordCountMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
         Text outputKey = new Text();
@@ -43,9 +41,27 @@ public class WordCountMR {
         }
     }
 
-    /* 2 reduce(一行)
-        <hbase， List(1,1)>  -> <hbase, 2>
-        <hadoop， List(1)>   -> <hadoop, 1>
+    /*
+    * combiner
+    */
+    public static class WordCountCombiner extends Reducer<Text, IntWritable, Text, IntWritable> {
+        IntWritable outputValue = new IntWritable(1);
+        @Override
+        protected void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            List<IntWritable> list = Lists.newArrayList(values);
+            System.out.println("[combiner in] key:"+ key +", value:" + list);
+            int sum = 0;
+            for(IntWritable value: list){
+                sum += value.get();
+            }
+            outputValue.set(sum);
+            System.out.println("[combiner out] key:"+ key +", value:" + Lists.newArrayList(outputValue));
+            context.write(key, outputValue);
+        }
+    }
+
+    /*
+    * reduce
     */
     public static class WordCountReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
         IntWritable outputValue = new IntWritable(1);
@@ -63,12 +79,6 @@ public class WordCountMR {
         }
     }
 
-    /* driver:组装所有的过程到job
-    1 configure
-    2 create job
-    3 input -> map  -> reduce -> output
-    4 commit
-    */
     public int run(String[] args) throws Exception{
         Configuration configuration = new Configuration();
         Job job = Job.getInstance(configuration, this.getClass().getSimpleName());
@@ -83,6 +93,20 @@ public class WordCountMR {
         job.setMapperClass(WordCountMapper.class);
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(IntWritable.class);
+
+        /*
+        * shuffer配置
+        * 1 分区 job.setPartitionerClass();
+        * 2 排序 job.setSortComparatorClass();
+        * 3 分组 job.setGroupingComparatorClass();
+        * 4 combiner组合（就是map端 的reduce，可选，
+        *   使用场景：当map结果比较多时先执行combiner可减少后面reduce时的网络传输，IO压力） job.setCombinerClass();
+        * 5 compress压缩
+        */
+
+        job.setCombinerClass(WordCountCombiner.class);
+
+
 
         //reduce
         job.setReducerClass(WordCountReduce.class);
@@ -106,7 +130,7 @@ public class WordCountMR {
              "hdfs://bigdata-pro11.liwei.com:9000/user/data/liwei/wc.input",
              "hdfs://bigdata-pro11.liwei.com:9000/user/data/output"
         };
-        WordCountMR wordCountMR = new WordCountMR();
+        WordCountCombinerMR wordCountMR = new WordCountCombinerMR();
         try {
             Path outputPath = new Path(args[1]);
             FileSystem fileSystem = FileSystem.get(new Configuration());

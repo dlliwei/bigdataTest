@@ -1,5 +1,6 @@
 package com.bigdata.test.mr;
 
+import com.google.common.collect.Lists;
 import com.sun.tools.internal.jxc.SchemaGenerator;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -47,7 +48,7 @@ public class WordCountUpMR extends Configured implements Tool{
         IntWritable outputValue = new IntWritable(1);
         @Override
         protected void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            //System.out.println("[reduce] keyIn:"+ key +", valueIn:" + values.);
+            System.out.println("[reduce] keyIn:"+ key +", valueIn:" + Lists.newArrayList(values));
             int sum = 0;
             for(IntWritable value: values){
                 sum += value.get();
@@ -71,6 +72,19 @@ public class WordCountUpMR extends Configured implements Tool{
         job.setMapperClass(WordCountMapper.class);
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(IntWritable.class);
+
+        /*
+        * shuffer配置
+        * 1 分区 job.setPartitionerClass();
+        * 2 排序 job.setSortComparatorClass();
+        * 3 分组 job.setGroupingComparatorClass();
+        * 4 combiner组合（就是map端 的reduce，可选，
+        *   使用场景：当map结果比较多时先执行combiner可减少后面reduce时的网络传输，IO压力） job.setCombinerClass();
+        * 5 compress压缩
+        */
+
+
+
 
         //reduce
         job.setReducerClass(WordCountReduce.class);
