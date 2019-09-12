@@ -98,15 +98,21 @@ public class WordCountCombinerMR extends Configured implements Tool{
         * shuffer配置
         * 1 分区 job.setPartitionerClass();
         * 2 排序 job.setSortComparatorClass();
-        * 3 分组 job.setGroupingComparatorClass();
-        * 4 combiner组合（就是map端 的reduce，可选，
+        * 3 combiner组合（就是map端 的reduce，可选)
         *   使用场景：当map结果比较多时先执行combiner可减少后面reduce时的网络传输，IO压力） job.setCombinerClass();
-        * 5 compress压缩
+        * 4 compress压缩 (必须配置)
+        * 5 分组 job.setGroupingComparatorClass();
         */
 
+        //combiner组合
         job.setCombinerClass(WordCountCombiner.class);
 
+        //compress压缩
+        configuration.set("mapreduce.map.output.compress", "true");
+        configuration.set("mapreduce.output.fileoutputformat.compress.codec", "org.apache.hadoop.io.compress.SnappyCodec");
 
+        //
+        job.setNumReduceTasks(2);
 
         //reduce
         job.setReducerClass(WordCountReduce.class);
