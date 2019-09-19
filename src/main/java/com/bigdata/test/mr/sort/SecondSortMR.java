@@ -1,6 +1,5 @@
-package com.bigdata.test.mr;
+package com.bigdata.test.mr.sort;
 
-import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileSystem;
@@ -17,25 +16,42 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /*
-* MapReduce模板：MapReduce升级版本
+二次排序：
+a 12			a#12，12         a#12，12
+b 31			b#31，31         b#19，19
+c 32	--->	c#32，32   --->	 b#21，21   --->  b#, List(19, 21, 31)   --->   b,19  b,21  b,31
+b 19			b#19，19	  	     b#31，31
+b 21			b#21，21	  	     c#32，32
 */
-public class MRTemplate extends Configured implements Tool{
+public class SecondSortMR extends Configured implements Tool{
 
     /*
     * map
-    * //TODO 输出参数
+    * <0, a 12>  ->  <a, 12>
     */
-    public static class TemplateMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
+    public static class TemplateMapper extends Mapper<LongWritable, Text, PairWritable, IntWritable> {
         @Override
         public void setup(Context context) throws IOException, InterruptedException {
             //TODO
         }
 
+        PairWritable outputKey = new PairWritable();
+        IntWritable outputValue = new IntWritable(0);
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-            //TODO
+            System.out.println("[map in] key:"+ key +", value:" + value);
+            String[] arr = value.toString().split(" ");
+            outputKey.set(arr[0], Integer.parseInt(arr[1]));
+            outputValue.set(Integer.parseInt(arr[1]));
+            context.write(outputKey, outputValue);
+
+            //map out 会自动执行compareTo
+            System.out.println("[map out] key:"+ outputKey +", value:" + outputValue);
         }
 
         @Override
@@ -46,17 +62,29 @@ public class MRTemplate extends Configured implements Tool{
 
     /*
     * reduce
-    * //TODO 输入参数
+    * b#, List(19, 21, 31)      ---> b,19  b,21  b,31
     */
-    public static class TemplateReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
+    public static class TemplateReduce extends Reducer<PairWritable, IntWritable, Text, IntWritable> {
         @Override
         public void setup(Context context) throws IOException, InterruptedException {
             //TODO
         }
 
+        Text outputKey = new Text();
         @Override
-        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            //TODO
+        public void reduce(PairWritable key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            List<Integer> valueList = new ArrayList<Integer>();
+            for (IntWritable value: values){
+                valueList.add(value.get());
+            }
+            System.out.println("[reduce in] key:"+ key +", value:" + valueList);
+
+            for (Integer value: valueList){
+                outputKey.set(key.getFirst());
+                context.write(outputKey, new IntWritable(value));
+                System.out.println("[reduce out] key:"+ outputKey +", value:" + value);
+            }
+
         }
 
         @Override
@@ -77,21 +105,25 @@ public class MRTemplate extends Configured implements Tool{
 
         //map
         job.setMapperClass(TemplateMapper.class);
-        //TODO
-        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputKeyClass(PairWritable.class);
         job.setMapOutputValueClass(IntWritable.class);
 
-        /*
-        * shuffer配置
-        * 1 分区 job.setPartitionerClass();
-        * 2 排序 job.setSortComparatorClass();
+        /* --------------------shuffer配置 begin-----------------------------*/
 
-        * 3 combiner组合（就是map端 的reduce，可选，
-        *   使用场景：当map结果比较多时先执行combiner可减少后面reduce时的网络传输，IO压力） job.setCombinerClass();
-        * 4 compress压缩
-        * 5 分组 job.setGroupingComparatorClass();
-        */
+        //分区
+        job.setPartitionerClass(FirstPartitoner.class);
 
+        //排序
+        //job.setSortComparatorClass();
+
+        //分组
+        job.setGroupingComparatorClass(FirstGrouping.class);
+
+        //combiner组合
+
+        //compress压缩
+
+        /* --------------------shuffer配置 end-----------------------------*/
 
         //reduce
         job.setReducerClass(TemplateReduce.class);
@@ -113,7 +145,7 @@ public class MRTemplate extends Configured implements Tool{
     public static void main(String[] args){
         //args在本地运行时可打开下面的注释
         args = new String[]{
-             "hdfs://bigdata-pro11.liwei.com:9000/user/data/liwei/wc.input",
+             "hdfs://bigdata-pro11.liwei.com:9000/user/data/liwei/secondSort",
              "hdfs://bigdata-pro11.liwei.com:9000/user/data/output"
         };
         Configuration configuration = new Configuration();
@@ -124,7 +156,7 @@ public class MRTemplate extends Configured implements Tool{
                 fileSystem.delete(outputPath, true);
             }
             //int status = wordCountMR.run(args);
-            int status = ToolRunner.run(configuration, new MRTemplate(), args);
+            int status = ToolRunner.run(configuration, new SecondSortMR(), args);
             System.exit(status);
         } catch (Exception e) {
             e.printStackTrace();

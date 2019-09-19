@@ -1,6 +1,6 @@
-package com.bigdata.test.mr;
+package com.bigdata.test.mr.sort;
 
-import org.apache.commons.lang3.StringUtils;
+import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileSystem;
@@ -17,42 +17,41 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /*
-* MapReduce模板：MapReduce升级版本
+* 二次排序：在reduce中排序（实际情况不会这么使用）
+WordCountMR中 map 结果作为二次排序的输入：
+a 12
+b 31
+c 32
+b 19
+b 21
+
+注意：
+实际应用中应该放到shuffer中，不应该放到reduce中
 */
-public class WebPV extends Configured implements Tool{
+public class SortMR extends Configured implements Tool{
 
     /*
     * map
     * //TODO 输出参数
     */
-    public static class WebPVMapper extends Mapper<LongWritable, Text, IntWritable, IntWritable> {
+    public static class TemplateMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
         @Override
         public void setup(Context context) throws IOException, InterruptedException {
             //TODO
         }
 
-        IntWritable outputKey = new IntWritable();
-        IntWritable outputValue = new IntWritable(1);
+        Text outputKey = new Text();
+        IntWritable outputValue = new IntWritable(0);
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             String[] arr = value.toString().split(" ");
-            if(arr.length != 7){
-                context.getCounter("WEBPV COUNTERS", "length error").increment(1);
-                return;
-            }
-            String provinceIdValue = arr[5];
-            //String url = arr[1];
-            if(StringUtils.isBlank(provinceIdValue)){
-                context.getCounter("WEBPV COUNTERS", "provinceId null").increment(1);
-                return;
-            }
-            if(!StringUtils.isNumeric(provinceIdValue)){
-                context.getCounter("WEBPV COUNTERS", "provinceId no number").increment(1);
-                return;
-            }
-            outputKey.set(Integer.parseInt(provinceIdValue));
+            outputKey.set(arr[0]);
+            outputValue.set(Integer.parseInt(arr[1]));
             context.write(outputKey, outputValue);
         }
 
@@ -66,21 +65,24 @@ public class WebPV extends Configured implements Tool{
     * reduce
     * //TODO 输入参数
     */
-    public static class WebPVReduce extends Reducer<IntWritable, IntWritable, IntWritable, IntWritable> {
+    public static class TemplateReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
         @Override
         public void setup(Context context) throws IOException, InterruptedException {
             //TODO
         }
 
-        IntWritable outputValue = new IntWritable(1);
+        IntWritable outputValue = new IntWritable(0);
         @Override
-        public void reduce(IntWritable key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            int sum = 0;
-            for(IntWritable value: values){
-                sum += value.get();
+        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            List<Integer> valueList = new ArrayList<Integer>();
+            for (IntWritable value: values){
+                valueList.add(value.get());
             }
-            outputValue.set(sum);
-            context.write(key, outputValue);
+            Collections.sort(valueList);
+            for (Integer value: valueList){
+                outputValue.set(value);
+                context.write(key, outputValue);
+            }
         }
 
         @Override
@@ -100,8 +102,9 @@ public class WebPV extends Configured implements Tool{
         FileInputFormat.setInputPaths(job, input);
 
         //map
-        job.setMapperClass(WebPVMapper.class);
-        job.setMapOutputKeyClass(IntWritable.class);
+        job.setMapperClass(TemplateMapper.class);
+        //TODO
+        job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(IntWritable.class);
 
         /*
@@ -114,20 +117,14 @@ public class WebPV extends Configured implements Tool{
         * 5 compress压缩
         */
 
-        //combiner
-        //一个map对应一个combiner，相当于map端的reduce
-        job.setCombinerClass(WebPVReduce.class);
+
+
 
         //reduce
-        //多个map或combiner 对应一个reduce
-        job.setReducerClass(WebPVReduce.class);
-        job.setOutputKeyClass(IntWritable.class);
+        job.setReducerClass(TemplateReduce.class);
+        //TODO
+        job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(IntWritable.class);
-
-
-
-        //no reduce task时：combiner也不生效，只有map端的shuffer过程
-//        job.setNumReduceTasks(0);
 
         //output
         Path output = new Path(args[1]);
@@ -142,10 +139,10 @@ public class WebPV extends Configured implements Tool{
 
     public static void main(String[] args){
         //args在本地运行时可打开下面的注释
-//        args = new String[]{
-//             "hdfs://bigdata-pro11.liwei.com:9000//user/data/liwei/webpv/",
-//             "hdfs://bigdata-pro11.liwei.com:9000/user/data/output"
-//        };
+        args = new String[]{
+             "hdfs://bigdata-pro11.liwei.com:9000/user/data/liwei/secondSort",
+             "hdfs://bigdata-pro11.liwei.com:9000/user/data/output"
+        };
         Configuration configuration = new Configuration();
         try {
             Path outputPath = new Path(args[1]);
@@ -154,7 +151,7 @@ public class WebPV extends Configured implements Tool{
                 fileSystem.delete(outputPath, true);
             }
             //int status = wordCountMR.run(args);
-            int status = ToolRunner.run(configuration, new WebPV(), args);
+            int status = ToolRunner.run(configuration, new SortMR(), args);
             System.exit(status);
         } catch (Exception e) {
             e.printStackTrace();
